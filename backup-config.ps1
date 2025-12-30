@@ -8,6 +8,9 @@ $backupDir = "C:\backup"
 # Temporary directory for creating zip files before copying to destination
 $tempDir = "C:\temp"
 
+# Maximum allowed backup folder size in GB
+$maxFolderSizeGB = 10
+
 # Date format for backup file names (yyyyMMdd creates format like 20251228)
 $dateStamp = Get-Date -Format "yyyyMMdd"
 
@@ -27,9 +30,3 @@ $foldersToBackup = @(
         Path = [Environment]::GetFolderPath("Desktop")
     }
 )
-
-# Optional: Add more folders using custom paths
-# @{
-#     Name = "CustomFolder"
-#     Path = "C:\Path\To\Custom\Folder"
-# }

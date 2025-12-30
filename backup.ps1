@@ -1,11 +1,10 @@
 <#
 .SYNOPSIS
-    Creates compressed backups of the current user's Documents AND Pictures folders
+    Creates compressed backups of the current user's special folders.
 .DESCRIPTION
-    Automatically detects current user's special folders
-    Creates dated zip archives first in C:\temp (for reliable compression)
-    Then copies the completed zip to D:\FLEX pc
-    This avoids potential issues with writing large zip files directly to mapped/network drives
+    Automatically detects current user's Documents, Desktop, Pictures folders.
+    Creates dated zip archives first in C:\temp, then copies the completed zip to the backup destination.
+    This avoids potential issues with writing large zip files directly to external/network drives.
 .EXAMPLE
     .\backup.ps1
     .\backup.ps1 -ConfigFile ".\backup-config.ps1"
@@ -24,7 +23,7 @@ if (-not (Test-Path $ConfigFile)) {
     exit 1
 }
 
-Write-Host "Loading configuration from: $ConfigFile" -ForegroundColor Cyan
+Write-Host "Loading configuration from: $ConfigFile"
 . $ConfigFile
 
 # Validate required configuration variables
@@ -43,34 +42,44 @@ if (-not $foldersToBackup) {
     exit 1
 }
 
-# Check if folders to backup exist and calculate total size
+if (-not $dateStamp) {
+    $dateStamp = Get-Date -Format "yyyyMMdd"
+}
+
+# Check if folders exist and calculate total size
 $totalSizeGB = 0
 $validFolders = @()
-
+Write-Host "`nCalculating folder sizes..." -ForegroundColor Cyan
 foreach ($folder in $foldersToBackup) {
     $folderPath = $folder.Path
     if (Test-Path $folderPath) {
         $folderSize = (Get-ChildItem -Path $folderPath -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
         $folderSizeGB = $folderSize / 1GB
         $totalSizeGB += $folderSizeGB
-        $validFolders += $folder
+        
+        $folderWithSize = @{
+            Name = $folder.Name
+            Path = $folder.Path
+            SizeGB = $folderSizeGB
+        }
+        $validFolders += $folderWithSize
+        
         Write-Host "Folder: $($folder.Name) - Size: $([math]::Round($folderSizeGB, 2)) GB" -ForegroundColor Cyan
     }
 }
 
-Write-Host "Total backup size: $([math]::Round($totalSizeGB, 2)) GB" -ForegroundColor Cyan
+Write-Host "`nTotal backup size: $([math]::Round($totalSizeGB, 2)) GB" -ForegroundColor Green
 
-# Check if total size exceeds 10GB limit
-if ($totalSizeGB -gt 10) {
-    Write-Error "Total backup size ($([math]::Round($totalSizeGB, 2)) GB) exceeds 10GB limit!"
+# Check if folder size exceeds limit
+$oversizedFolders = $validFolders | Where-Object { $_.SizeGB -gt $maxFolderSizeGB }
+if ($oversizedFolders.Count -gt 0) {
+    Write-Host "`nFolders exceeding $maxFolderSizeGB GB limit:" -ForegroundColor Red
+    $oversizedFolders | ForEach-Object {
+        Write-Host "Oversize - $($_.Name): $([math]::Round($_.SizeGB, 2)) GB"
+    }
+
+    Write-Host "`nBackup aborted due to oversized folders." -ForegroundColor Red
     exit 1
-}
-
-$foldersToBackup = $validFolders
-
-# Set default date stamp if not provided in config
-if (-not $dateStamp) {
-    $dateStamp = Get-Date -Format "yyyyMMdd"
 }
 
 # Ensure temp directory exists
@@ -88,7 +97,7 @@ if (-not (Test-Path $backupDir)) {
 Write-Host "Current user: $env:USERNAME" -ForegroundColor Cyan
 Write-Host "Date stamp: $dateStamp`n" -ForegroundColor Cyan
 
-foreach ($folder in $foldersToBackup) {
+foreach ($folder in $validFolders) {
     $folderName = $folder.Name
     $sourcePath = $folder.Path
     $backupFileName = "${dateStamp} ${folderName} backup.zip"
